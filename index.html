@@ -227,6 +227,7 @@ button.togchip:hover{border-color:var(--warn);color:var(--warn)}
         <label class="check" data-for="keep"><input type="checkbox" id="persp" data-key="persp"><span>Corriger le trapèze<small>Tableaux, gravures, livres, documents : les bords redeviennent droits et parallèles.</small></span></label>
         <label class="check"><input type="checkbox" id="straighten" data-key="straighten"><span>Redresser automatiquement<small>Remet d'aplomb les objets aux bords droits, jusqu'à 12°.</small></span></label>
         <label class="check" data-for="keep"><input type="checkbox" id="autocrop" data-key="autocrop"><span>Recadrer sur l'objet<small>Coupe le décor inutile autour, en gardant le fond d'origine.</small></span></label>
+        <label class="check" data-for="keep"><input type="checkbox" id="recenter" data-key="recenter"><span>Recentrer l'objet<small>Place l'objet au milieu avec la même marge de chaque côté, en prolongeant le fond si la photo manque de place.</small></span></label>
         <div class="two">
           <div class="row">
             <div class="lab"><label for="ratio">Format</label></div>
@@ -366,7 +367,7 @@ button.togchip:hover{border-color:var(--warn);color:var(--warn)}
 (function(){
 "use strict";
 const $=s=>document.querySelector(s);
-const DEF={mode:'keep',persp:true,straighten:true,autocrop:true,ratio:'auto',margin:10,auto:true,temp:0,tint:0,bright:0,contrast:0,sat:0,sharp:35,tol:1,holes:true,shadow:true,format:'jpg',size:'2000',naming:'orig',lotPrefix:'Lot',lotStart:1};
+const DEF={mode:'keep',persp:true,straighten:true,autocrop:true,ratio:'auto',margin:10,recenter:true,auto:true,temp:0,tint:0,bright:0,contrast:0,sat:0,sharp:35,tol:1,holes:true,shadow:true,format:'jpg',size:'2000',naming:'orig',lotPrefix:'Lot',lotStart:1};
 const SKEY='studio-catalogue-v2';
 let S=Object.assign({},DEF);
 try{const raw=localStorage.getItem(SKEY); if(raw) Object.assign(S,JSON.parse(raw));}catch(e){}
@@ -935,10 +936,15 @@ function renderKeep(p,A,outLong,maxWork){
   const ar=RATIOS[S.ratio];
   const frame=m=>{let ow=qw+2*m, oh=qh+2*m; if(ar){ if(ow/oh<ar) ow=oh*ar; else oh=ow/ar; } return [ow,oh,(ow-qw)/2,(oh-qh)/2];};
   const inside=([ow,oh,ox,oy])=>[[0,0],[ow,0],[ow,oh],[0,oh]].every(([X,Y])=>{const s2=toSrc(X,Y,ox,oy); return s2&&s2[0]>=-1&&s2[1]>=-1&&s2[0]<=W+1&&s2[1]<=H+1;});
+  // recentre: keep the full margin on every side and extend the backdrop where the photo is too short
+  const extend=S.recenter!==false&&R.kind!=='full'&&!!A.bR;
   let mpx=R.kind==='full'?0:S.margin/100*(qw+qh)/2, fr0=frame(mpx);
-  for(let it=0;it<8&&mpx>0&&!inside(fr0);it++){mpx*=.6; if(mpx<1) mpx=0; fr0=frame(mpx);}
+  if(!extend) for(let it=0;it<8&&mpx>0&&!inside(fr0);it++){mpx*=.6; if(mpx<1) mpx=0; fr0=frame(mpx);}
+  let extended=false;
   const [ow,oh,offx,offy]=fr0;
   const k=outLong/Math.max(ow,oh), Wo=Math.max(1,Math.round(ow*k)), Ho=Math.max(1,Math.round(oh*k));
+  // the work image is much bigger than needed (wide margin): redo at the right size, faster than oversampling
+  if(1/k>1.4&&workLong>420) return renderKeep(p,A,outLong,Math.max(400,workLong*k*1.15));
   // read only the part of the photo the output needs
   let rx0=1e9,ry0=1e9,rx1=-1e9,ry1=-1e9;
   for(let t=0;t<=8;t++)for(const [X,Y] of [[ow*t/8,0],[ow*t/8,oh],[0,oh*t/8],[ow,oh*t/8]]){const s2=toSrc(X,Y,offx,offy); if(!s2) continue; if(s2[0]<rx0)rx0=s2[0]; if(s2[0]>rx1)rx1=s2[0]; if(s2[1]<ry0)ry0=s2[1]; if(s2[1]>ry1)ry1=s2[1];}
@@ -964,13 +970,24 @@ function renderKeep(p,A,outLong,maxWork){
   const out=new ImageData(Wo,Ho), od=out.data;
   const ss=(1/k)>1.4?2:1, so=ss===2?[-.25,.25]:[0], m2=so.length*so.length, ik=1/k, iqw=1/qw, iqh=1/qh;
   const Wm=RW-1, Hm=RH-1, LR=LUT[0], LG=LUT[1], LB=LUT[2];
+  const AW=A.W, AWm=A.W-1, AHm=A.H-1, AWr=A.W/W, AHr=A.H/H, bRm=A.bR, bGm=A.bG, bBm=A.bB, grain=3;
   for(let Y=0;Y<Ho;Y++){ let oi=Y*Wo*4;
    for(let X=0;X<Wo;X++,oi+=4){
     let sr=0,sg=0,sb=0;
     for(let jy=0;jy<so.length;jy++)for(let jx=0;jx<so.length;jx++){
       const u=((X+.5+so[jx])*ik-offx)*iqw, v=((Y+.5+so[jy])*ik-offy)*iqh, den=1/(g*u+h*v+1);
       const sx=(a*u+b*v+c)*den-.5, sy=(dd*u+e*v+f)*den-.5;
-      if(sx<-.5||sy<-.5||sx>W-.5||sy>H-.5){sr+=fr;sg+=fg;sb+=fb;continue;}
+      if(sx<-.5||sy<-.5||sx>W-.5||sy>H-.5){
+        if(extend){ extended=true;
+          let mx=(sx+.5)*AWr-.5, my=(sy+.5)*AHr-.5; if(mx<0)mx=0; else if(mx>AWm)mx=AWm; if(my<0)my=0; else if(my>AHm)my=AHm;
+          const mx0=mx|0, my0=my|0, mx1=mx0<AWm?mx0+1:AWm, my1=my0<AHm?my0+1:AHm, fx=mx-mx0, fy=my-my0;
+          const j00=my0*AW+mx0, j01=my0*AW+mx1, j10=my1*AW+mx0, j11=my1*AW+mx1;
+          const gr=((((X*73856093)^(Y*19349663))>>>0)%1000/1000-.5)*grain;
+          sr+=(bRm[j00]*(1-fx)+bRm[j01]*fx)*(1-fy)+(bRm[j10]*(1-fx)+bRm[j11]*fx)*fy+gr;
+          sg+=(bGm[j00]*(1-fx)+bGm[j01]*fx)*(1-fy)+(bGm[j10]*(1-fx)+bGm[j11]*fx)*fy+gr;
+          sb+=(bBm[j00]*(1-fx)+bBm[j01]*fx)*(1-fy)+(bBm[j10]*(1-fx)+bBm[j11]*fx)*fy+gr;
+        } else {sr+=fr;sg+=fg;sb+=fb;}
+        continue;}
       const lx=sx-X0, ly=sy-Y0;
       let x0=lx|0, y0=ly|0; if(lx<0)x0=0; if(ly<0)y0=0; if(x0>Wm)x0=Wm; if(y0>Hm)y0=Hm;
       const x1=x0<Wm?x0+1:Wm, y1=y0<Hm?y0+1:Hm;
@@ -979,13 +996,14 @@ function renderKeep(p,A,outLong,maxWork){
       sr+=(cd[i00]*bx+cd[i01]*ax)*by+(cd[i10]*bx+cd[i11]*ax)*ay;
       sg+=(cd[i00+1]*bx+cd[i01+1]*ax)*by+(cd[i10+1]*bx+cd[i11+1]*ax)*ay;
       sb+=(cd[i00+2]*bx+cd[i01+2]*ax)*by+(cd[i10+2]*bx+cd[i11+2]*ax)*ay;}
-    let r=LR[(sr/m2+.5)|0], gg=LG[(sg/m2+.5)|0], bb=LB[(sb/m2+.5)|0];
+    let ir=(sr/m2+.5)|0, ig=(sg/m2+.5)|0, ib=(sb/m2+.5)|0; if(ir<0)ir=0; else if(ir>255)ir=255; if(ig<0)ig=0; else if(ig>255)ig=255; if(ib<0)ib=0; else if(ib>255)ib=255;
+    let r=LR[ir], gg=LG[ig], bb=LB[ib];
     if(satF!==1){const l=.299*r+.587*gg+.114*bb; r=l+(r-l)*satF; gg=l+(gg-l)*satF; bb=l+(bb-l)*satF;}
     od[oi]=r; od[oi+1]=gg; od[oi+2]=bb; od[oi+3]=255;}}
   sharpenData(od,Wo,Ho);
   const oc=document.createElement('canvas'); oc.width=Wo; oc.height=Ho;
   oc.getContext('2d').putImageData(out,0,0);
-  return {canvas:oc,info:{white:false,ok:A.ok,kind:R.kind,angle:R.angle,autoDeg:R.autoDeg,color:colorDone,Wo,Ho,quad:R.quad}};
+  return {canvas:oc,info:{white:false,ok:A.ok,kind:R.kind,angle:R.angle,autoDeg:R.autoDeg,color:colorDone,extended,Wo,Ho,quad:R.quad}};
 }
 
 /* ================= render: white background ================= */
@@ -1149,7 +1167,7 @@ function makeVase(){
 }
 
 /* ================= per-photo settings ================= */
-const PHOTO_KEYS=['persp','straighten','autocrop','ratio','margin','auto','temp','tint','bright','contrast','sat','sharp','mode','tol','holes','shadow'];
+const PHOTO_KEYS=['persp','straighten','autocrop','recenter','ratio','margin','auto','temp','tint','bright','contrast','sat','sharp','mode','tol','holes','shadow'];
 function eff(p){return p&&p.adj&&Object.keys(p.adj).length?Object.assign({},S,p.adj):S;}
 function withS(p,fn){const keep=S; S=eff(p); try{return fn();}finally{S=keep;}}
 let scope='all'; try{scope=localStorage.getItem('studio-catalogue-scope')||'all';}catch(e){}
@@ -1248,6 +1266,7 @@ function showCurrent(){
     if(i.kind==='white') add('Fond blanc','ok');
     if(i.kind==='persp') tog('persp','Trapèze corrigé'); else if(p.off.persp) tog('persp','','Trapèze : rétablir');
     if(i.kind==='crop') tog('crop','Recadré'); else if(p.off.crop) tog('crop','','Recadrage : rétablir');
+    if(i.extended) add('Recentré, fond prolongé','ok');
     if(Math.abs(i.autoDeg||0)>=.25) tog('rot','Redressé '+(i.autoDeg>0?'+':'−')+fmtNum(Math.abs(i.autoDeg))+'°'); else if(p.off.rot) tog('rot','','Redressement : rétablir');
     if(i.color) tog('color','Couleurs corrigées'); else if(p.off.color) tog('color','','Couleurs : rétablir');
     if(i.kind==='full'&&!i.color&&!p.off.persp&&!p.off.crop&&Math.abs(i.autoDeg||0)<.25&&!i.whiteFailed) add('Aucune correction sûre : photo laissée telle quelle');

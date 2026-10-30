@@ -10,6 +10,7 @@ Retouche automatique et gratuite de photos de lots (tableaux, gravures, livres, 
 - **Réglages par photo ou pour toutes**, et rotation de plusieurs photos sélectionnées d'un coup (Ctrl+clic, Maj+clic, Ctrl+A)
 - **Ajustement manuel des coins** quand la détection automatique se trompe
 - **Couleur** : balance des blancs à partir du mur ou du fond, niveaux, température, teinte, luminosité, contraste, saturation, netteté
+- **Recentrage** : l'objet est placé au milieu avec la même marge de chaque côté ; si la photo manque de place d'un côté, le fond est prolongé
 - **Recadrage automatique** sur l'objet, avec redressement et marge réglable, en gardant le fond d'origine
 - **Fond blanc** en option pour détourer un objet
 - **Export par lot** : avant d'exporter, l'appli demande où enregistrer. Sur ordinateur (Chrome ou Edge), les photos vont directement dans le dossier choisi, mémorisé pour la fois suivante, avec un sous-dossier daté si on le souhaite ; sinon, téléchargement d'un ZIP. Aucun fichier existant n'est écrasé. Nom d'origine ou numérotation « Lot-001 »
