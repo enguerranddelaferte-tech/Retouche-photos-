@@ -4,7 +4,10 @@ Retouche automatique et gratuite de photos de lots (tableaux, gravures, livres, 
 
 ## Ce que fait l'appli
 
-- **Correction du trapèze** : détecte les œuvres à 4 côtés (tableau, gravure, livre, document) photographiées de biais et les remet à plat, avec leurs vraies proportions
+- **Correction du trapèze** : repère les 4 bords droits d'une œuvre (tableau, gravure, livre, document) photographiée de biais, même sur un mur tapissé, une table en bois ou un décor chargé, et la remet à plat avec ses vraies proportions
+- **Redressement automatique** à partir des lignes droites de la photo (cadre, étagère, bord de table), en plus de l'orientation enregistrée par l'appareil
+- **Retouches conservées** : rotations, coins, réglages et corrections annulées sont gardés sur l'appareil et retrouvés à la prochaine ouverture
+- **Réglages par photo ou pour toutes**, et rotation de plusieurs photos sélectionnées d'un coup (Ctrl+clic, Maj+clic, Ctrl+A)
 - **Ajustement manuel des coins** quand la détection automatique se trompe
 - **Couleur** : balance des blancs à partir du mur ou du fond, niveaux, température, teinte, luminosité, contraste, saturation, netteté
 - **Recadrage automatique** sur l'objet, avec redressement et marge réglable, en gardant le fond d'origine
