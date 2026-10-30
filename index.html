@@ -143,6 +143,24 @@ button.togchip:hover{border-color:var(--warn);color:var(--warn)}
 .addtile{flex:none;width:118px;height:92px;border-radius:8px;border:1.5px dashed var(--line);display:grid;place-items:center;color:var(--muted);font-size:13px;cursor:pointer;text-align:center;padding:6px}
 .addtile:hover{border-color:var(--accent);color:var(--fg)}
 .note{font-size:13px;color:var(--muted);margin:0;max-width:75ch}
+.xback{position:fixed;inset:0;z-index:30;background:color-mix(in srgb, #000 45%, transparent);display:grid;place-items:center;padding:16px}
+.xbox{background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.35);width:min(520px,100%);max-height:calc(100vh - 32px);overflow:auto;padding:20px;display:grid;gap:14px}
+.xbox h2{margin:0;font:700 19px var(--display)}
+.xsum{margin:0;font:500 12px var(--mono);color:var(--muted);overflow-wrap:anywhere}
+.xform{display:grid;gap:10px}
+.xbox fieldset{border:1px solid var(--line);border-radius:10px;padding:12px;margin:0;display:grid;gap:10px}
+.xbox legend{font:600 11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:0 6px}
+.xopt{display:grid;gap:8px}
+.xradio{display:flex;gap:9px;align-items:center;font-size:14px;cursor:pointer}
+.xradio input{accent-color:var(--accent);width:16px;height:16px;margin:0}
+.xfolder{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-left:25px;padding:8px 10px;background:var(--surface-2);border-radius:8px}
+.xfname{font:500 13px var(--mono);overflow-wrap:anywhere;min-width:0}
+#xSubRow{margin-left:25px}
+.xprog{display:grid;gap:8px}
+.xtrack{height:8px;background:var(--surface-2);border-radius:4px;overflow:hidden}
+.xbar{height:100%;width:0;background:var(--accent);transition:width .2s}
+.xstep{margin:0;font-size:13px;font-variant-numeric:tabular-nums}
+.xbtns{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap}
 .toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom, 0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:8px;font-size:13px;box-shadow:0 4px 18px rgba(0,0,0,.3);z-index:20;max-width:calc(100% - 32px)}
 
 /* computer: the workspace fills the window, settings scroll on their own */
@@ -223,7 +241,7 @@ button.togchip:hover{border-color:var(--warn);color:var(--warn)}
           </div>
           <div class="row">
             <div class="lab"><label for="margin">Marge</label><span class="val" id="marginV"></span></div>
-            <input type="range" id="margin" min="0" max="20" step="1" data-key="margin">
+            <input type="range" id="margin" min="0" max="30" step="1" data-key="margin">
           </div>
         </div>
       </section>
@@ -321,16 +339,38 @@ button.togchip:hover{border-color:var(--warn);color:var(--warn)}
   </div>
 </div>
 <div class="toast" id="toast" hidden></div>
+<div class="xback" id="exportDlg" hidden>
+  <div class="xbox" role="dialog" aria-modal="true" aria-labelledby="xTitle">
+    <h2 id="xTitle">Exporter</h2>
+    <p class="xsum" id="xSummary"></p>
+    <div id="xForm" class="xform">
+      <fieldset>
+        <legend>Où enregistrer ?</legend>
+        <div id="xFolderRow" class="xopt">
+          <label class="xradio"><input type="radio" name="xdest" id="xDestFolder" value="folder" checked><span>Dans un dossier de l'ordinateur</span></label>
+          <div class="xfolder"><span class="xfname" id="xFolderName"></span><button type="button" class="btn small" id="xPick">Choisir un dossier</button></div>
+          <div class="row" id="xSubRow"><div class="lab"><label for="xSub">Sous-dossier à créer (facultatif)</label></div><input type="text" id="xSub" maxlength="60"></div>
+        </div>
+        <label class="xradio"><input type="radio" name="xdest" id="xDestZip" value="zip"><span id="xZipLabel">Télécharger un fichier ZIP</span></label>
+        <p class="hint" id="xNoFolder" hidden>Pour enregistrer directement dans un dossier, ouvrez l'appli installée sur ordinateur, dans Chrome ou Edge.</p>
+      </fieldset>
+      <p class="hint">Un fichier du même nom n'est jamais écrasé : un numéro est ajouté.</p>
+    </div>
+    <div id="xProgress" class="xprog" hidden><div class="xtrack"><div class="xbar" id="xBar"></div></div><p id="xStep" class="xstep"></p></div>
+    <div class="xbtns"><button type="button" class="btn" id="xCancel">Annuler</button><button type="button" class="btn primary" id="xGo">Exporter</button></div>
+  </div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 (function(){
 "use strict";
 const $=s=>document.querySelector(s);
-const DEF={mode:'keep',persp:true,straighten:true,autocrop:true,ratio:'auto',margin:3,auto:true,temp:0,tint:0,bright:0,contrast:0,sat:0,sharp:35,tol:1,holes:true,shadow:true,format:'jpg',size:'2000',naming:'orig',lotPrefix:'Lot',lotStart:1};
+const DEF={mode:'keep',persp:true,straighten:true,autocrop:true,ratio:'auto',margin:10,auto:true,temp:0,tint:0,bright:0,contrast:0,sat:0,sharp:35,tol:1,holes:true,shadow:true,format:'jpg',size:'2000',naming:'orig',lotPrefix:'Lot',lotStart:1};
 const SKEY='studio-catalogue-v2';
 let S=Object.assign({},DEF);
 try{const raw=localStorage.getItem(SKEY); if(raw) Object.assign(S,JSON.parse(raw));}catch(e){}
+if(!S.mv||S.mv<3){ if(S.margin===3||S.margin===8) S.margin=DEF.margin; S.mv=3; }
 function saveSettings(){try{localStorage.setItem(SKEY,JSON.stringify(S));}catch(e){}}
 
 const photos=[]; let cur=-1, uid=0;
@@ -817,11 +857,14 @@ function toneFn(Bp,Wp){
 }
 function sharpen(x,Wo,Ho){
   if(S.sharp<=0) return;
-  const id=x.getImageData(0,0,Wo,Ho), dd=id.data, n=Wo*Ho, rad=Math.max(1,Math.round(Math.max(Wo,Ho)/1600)), amt=S.sharp/100*.9;
-  for(let c=0;c<3;c++){const a=new Float32Array(n); for(let i=0;i<n;i++) a[i]=dd[i*4+c];
-    const bl=boxBlur(a,Wo,Ho,rad);
-    for(let i=0;i<n;i++){const df=a[i]-bl[i]; if(df>1.5||df<-1.5) dd[i*4+c]=a[i]+amt*df;}}
-  x.putImageData(id,0,0);
+  const id=x.getImageData(0,0,Wo,Ho); sharpenData(id.data,Wo,Ho); x.putImageData(id,0,0);
+}
+function sharpenData(dd,Wo,Ho){
+  if(S.sharp<=0) return;
+  const n=Wo*Ho, rad=Math.max(1,Math.round(Math.max(Wo,Ho)/1600)), amt=S.sharp/100*.9;
+  const L=new Float32Array(n); for(let i=0,j=0;i<n;i++,j+=4) L[i]=.299*dd[j]+.587*dd[j+1]+.114*dd[j+2];
+  const bl=boxBlur(L,Wo,Ho,rad);
+  for(let i=0,j=0;i<n;i++,j+=4){const df=L[i]-bl[i]; if(df>1.5||df<-1.5){const add=amt*df; dd[j]+=add; dd[j+1]+=add; dd[j+2]+=add;}}
 }
 const RATIOS={'1:1':1,'4:5':.8,'3:4':.75,'4:3':4/3,'3:2':1.5};
 
@@ -879,21 +922,8 @@ function renderKeep(p,A,outLong,maxWork){
   const fullLong=Math.max(Wf,Hf);
   const workLong=Math.min(fullLong,maxWork,Math.max(400,fullLong*outLong*1.15/Math.max(1,sideF)));
   const src=oriented(p,workLong), W=src.width, H=src.height;
-  const d=src.getContext('2d',{willReadFrequently:true}).getImageData(0,0,W,H).data;
   const q=R.quad.map(([x,y])=>[x*W,y*H]);
-  // colour: histogram inside the region's bounding box
-  const {g:gain,cast}=colorGains(A,false,p);
-  const bx0=Math.max(0,Math.floor(Math.min(...q.map(c=>c[0])))), bx1=Math.min(W,Math.ceil(Math.max(...q.map(c=>c[0])))), by0=Math.max(0,Math.floor(Math.min(...q.map(c=>c[1])))), by1=Math.min(H,Math.ceil(Math.max(...q.map(c=>c[1]))));
-  const hist=new Uint32Array(256); let hn=0; const st=Math.max(1,Math.round(Math.sqrt((bx1-bx0)*(by1-by0)/90000)));
-  for(let y=by0;y<by1;y+=st)for(let x=bx0;x<bx1;x+=st){const i=(y*W+x)*4; const l=Math.min(255,Math.round(.299*d[i]*gain[0]+.587*d[i+1]*gain[1]+.114*d[i+2]*gain[2])); hist[l]++; hn++;}
-  const pct=qq=>{let acc=0; const lim=hn*qq; for(let k=0;k<256;k++){acc+=hist[k]; if(acc>=lim) return k/255;} return 1;};
-  let Bp=0,Wp=1; if(S.auto&&!p.off.color&&hn>50){Bp=Math.min(.05,pct(.001)*.8); Wp=Math.min(1,Math.max(.88,pct(.999)));}
-  const colorDone=cast||Bp>.012||Wp<.985;
-  const tone=toneFn(Bp,Wp);
-  // lookup tables per channel would ignore cross-channel saturation, so correct pixels directly
-  const n=W*H, cd=new Uint8ClampedArray(n*4), o=new Float32Array(3);
-  for(let i=0;i<n*4;i+=4){o[0]=d[i]*gain[0]/255;o[1]=d[i+1]*gain[1]/255;o[2]=d[i+2]*gain[2]/255; tone(o); cd[i]=o[0]*255; cd[i+1]=o[1]*255; cd[i+2]=o[2]*255; cd[i+3]=255;}
-  // output geometry
+  // output geometry (in work-image pixels)
   const top=Math.hypot(q[1][0]-q[0][0],q[1][1]-q[0][1]), bot=Math.hypot(q[2][0]-q[3][0],q[2][1]-q[3][1]), lft=Math.hypot(q[3][0]-q[0][0],q[3][1]-q[0][1]), rgt=Math.hypot(q[2][0]-q[1][0],q[2][1]-q[1][1]);
   let qw=(top+bot)/2, qh=(lft+rgt)/2;
   if(R.kind==='persp'||R.kind==='manual'){
@@ -901,34 +931,60 @@ function renderKeep(p,A,outLong,maxWork){
     qw=sA*Math.sqrt(rho); qh=sA/Math.sqrt(rho);
   }
   const [a,b,c,dd,e,f,g,h]=homog(q);
+  const toSrc=(X,Y,ox,oy)=>{const u=(X-ox)/qw, v=(Y-oy)/qh, den=g*u+h*v+1; return den<=0?null:[(a*u+b*v+c)/den,(dd*u+e*v+f)/den];};
   const ar=RATIOS[S.ratio];
   const frame=m=>{let ow=qw+2*m, oh=qh+2*m; if(ar){ if(ow/oh<ar) ow=oh*ar; else oh=ow/ar; } return [ow,oh,(ow-qw)/2,(oh-qh)/2];};
-  const inside=([ow,oh,ox,oy])=>[[0,0],[ow,0],[ow,oh],[0,oh]].every(([X,Y])=>{const u=(X-ox)/qw, v=(Y-oy)/qh, den=g*u+h*v+1; if(den<=0) return false; const sx=(a*u+b*v+c)/den, sy=(dd*u+e*v+f)/den; return sx>=-1&&sy>=-1&&sx<=W+1&&sy<=H+1;});
+  const inside=([ow,oh,ox,oy])=>[[0,0],[ow,0],[ow,oh],[0,oh]].every(([X,Y])=>{const s2=toSrc(X,Y,ox,oy); return s2&&s2[0]>=-1&&s2[1]>=-1&&s2[0]<=W+1&&s2[1]<=H+1;});
   let mpx=R.kind==='full'?0:S.margin/100*(qw+qh)/2, fr0=frame(mpx);
   for(let it=0;it<8&&mpx>0&&!inside(fr0);it++){mpx*=.6; if(mpx<1) mpx=0; fr0=frame(mpx);}
   const [ow,oh,offx,offy]=fr0;
   const k=outLong/Math.max(ow,oh), Wo=Math.max(1,Math.round(ow*k)), Ho=Math.max(1,Math.round(oh*k));
-  // fill colour for areas outside the photo: average of the corrected border
-  let fr=0,fg=0,fb=0,fn=0; for(let x=0;x<W;x+=4){for(const y of [0,H-1]){const i=(y*W+x)*4; fr+=cd[i];fg+=cd[i+1];fb+=cd[i+2];fn++;}}
+  // read only the part of the photo the output needs
+  let rx0=1e9,ry0=1e9,rx1=-1e9,ry1=-1e9;
+  for(let t=0;t<=8;t++)for(const [X,Y] of [[ow*t/8,0],[ow*t/8,oh],[0,oh*t/8],[ow,oh*t/8]]){const s2=toSrc(X,Y,offx,offy); if(!s2) continue; if(s2[0]<rx0)rx0=s2[0]; if(s2[0]>rx1)rx1=s2[0]; if(s2[1]<ry0)ry0=s2[1]; if(s2[1]>ry1)ry1=s2[1];}
+  const X0=Math.max(0,Math.floor(rx0)-2), Y0=Math.max(0,Math.floor(ry0)-2), X1=Math.min(W,Math.ceil(rx1)+3), Y1=Math.min(H,Math.ceil(ry1)+3);
+  const RW=Math.max(1,X1-X0), RH=Math.max(1,Y1-Y0);
+  const cd=src.getContext('2d',{willReadFrequently:true}).getImageData(X0,Y0,RW,RH).data;
+  // colour: levels from the object area
+  const {g:gain,cast}=colorGains(A,false,p);
+  const bx0=Math.max(X0,Math.floor(Math.min(...q.map(c=>c[0])))), bx1=Math.min(X1,Math.ceil(Math.max(...q.map(c=>c[0])))), by0=Math.max(Y0,Math.floor(Math.min(...q.map(c=>c[1])))), by1=Math.min(Y1,Math.ceil(Math.max(...q.map(c=>c[1]))));
+  const hist=new Uint32Array(256); let hn=0; const st=Math.max(1,Math.round(Math.sqrt(Math.max(1,(bx1-bx0)*(by1-by0))/90000)));
+  for(let y=by0;y<by1;y+=st)for(let x=bx0;x<bx1;x+=st){const i=((y-Y0)*RW+(x-X0))*4; const l=Math.min(255,Math.round(.299*cd[i]*gain[0]+.587*cd[i+1]*gain[1]+.114*cd[i+2]*gain[2])); hist[l]++; hn++;}
+  const pct=qq=>{let acc=0; const lim=hn*qq; for(let k=0;k<256;k++){acc+=hist[k]; if(acc>=lim) return k/255;} return 1;};
+  let Bp=0,Wp=1; if(S.auto&&!p.off.color&&hn>50){Bp=Math.min(.05,pct(.001)*.8); Wp=Math.min(1,Math.max(.88,pct(.999)));}
+  const colorDone=cast||Bp>.012||Wp<.985;
+  // per-channel lookup tables (gain, levels, temperature, brightness, contrast); saturation is done per pixel after
+  const keepSat=S.sat; S=Object.assign({},S,{sat:0}); const tone=toneFn(Bp,Wp); S=Object.assign({},S,{sat:keepSat});
+  const LUT=[new Uint8ClampedArray(256),new Uint8ClampedArray(256),new Uint8ClampedArray(256)], o=new Float32Array(3);
+  for(let v=0;v<256;v++){ for(let ch=0;ch<3;ch++){o[0]=o[1]=o[2]=0; o[ch]=v*gain[ch]/255; tone(o); LUT[ch][v]=Math.round(o[ch]*255);} }
+  const satF=1+S.sat/100;
+  // fill colour for areas outside the photo: average of the region border
+  let fr=0,fg=0,fb=0,fn=0; for(let x=0;x<RW;x+=4){for(const y of [0,RH-1]){const i=(y*RW+x)*4; fr+=cd[i];fg+=cd[i+1];fb+=cd[i+2];fn++;}}
   fr/=fn;fg/=fn;fb/=fn;
   const out=new ImageData(Wo,Ho), od=out.data;
-  const ss=(1/k)>1.4?2:1, so=ss===2?[-.25,.25]:[0];
-  for(let Y=0;Y<Ho;Y++)for(let X=0;X<Wo;X++){
+  const ss=(1/k)>1.4?2:1, so=ss===2?[-.25,.25]:[0], m2=so.length*so.length, ik=1/k, iqw=1/qw, iqh=1/qh;
+  const Wm=RW-1, Hm=RH-1, LR=LUT[0], LG=LUT[1], LB=LUT[2];
+  for(let Y=0;Y<Ho;Y++){ let oi=Y*Wo*4;
+   for(let X=0;X<Wo;X++,oi+=4){
     let sr=0,sg=0,sb=0;
-    for(const oy of so)for(const ox of so){
-      const u=((X+.5+ox)/k-offx)/qw, v=((Y+.5+oy)/k-offy)/qh, den=g*u+h*v+1;
-      const sx=(a*u+b*v+c)/den-.5, sy=(dd*u+e*v+f)/den-.5;
+    for(let jy=0;jy<so.length;jy++)for(let jx=0;jx<so.length;jx++){
+      const u=((X+.5+so[jx])*ik-offx)*iqw, v=((Y+.5+so[jy])*ik-offy)*iqh, den=1/(g*u+h*v+1);
+      const sx=(a*u+b*v+c)*den-.5, sy=(dd*u+e*v+f)*den-.5;
       if(sx<-.5||sy<-.5||sx>W-.5||sy>H-.5){sr+=fr;sg+=fg;sb+=fb;continue;}
-      const x0=Math.max(0,Math.min(W-1,Math.floor(sx))), y0=Math.max(0,Math.min(H-1,Math.floor(sy))), x1=Math.min(W-1,x0+1), y1=Math.min(H-1,y0+1);
-      const ax=Math.max(0,Math.min(1,sx-x0)), ay=Math.max(0,Math.min(1,sy-y0));
-      const i00=(y0*W+x0)*4,i01=(y0*W+x1)*4,i10=(y1*W+x0)*4,i11=(y1*W+x1)*4;
-      sr+=(cd[i00]*(1-ax)+cd[i01]*ax)*(1-ay)+(cd[i10]*(1-ax)+cd[i11]*ax)*ay;
-      sg+=(cd[i00+1]*(1-ax)+cd[i01+1]*ax)*(1-ay)+(cd[i10+1]*(1-ax)+cd[i11+1]*ax)*ay;
-      sb+=(cd[i00+2]*(1-ax)+cd[i01+2]*ax)*(1-ay)+(cd[i10+2]*(1-ax)+cd[i11+2]*ax)*ay;}
-    const m=so.length*so.length, oi=(Y*Wo+X)*4; od[oi]=sr/m; od[oi+1]=sg/m; od[oi+2]=sb/m; od[oi+3]=255;}
+      const lx=sx-X0, ly=sy-Y0;
+      let x0=lx|0, y0=ly|0; if(lx<0)x0=0; if(ly<0)y0=0; if(x0>Wm)x0=Wm; if(y0>Hm)y0=Hm;
+      const x1=x0<Wm?x0+1:Wm, y1=y0<Hm?y0+1:Hm;
+      let ax=lx-x0, ay=ly-y0; if(ax<0)ax=0; else if(ax>1)ax=1; if(ay<0)ay=0; else if(ay>1)ay=1;
+      const i00=(y0*RW+x0)<<2,i01=(y0*RW+x1)<<2,i10=(y1*RW+x0)<<2,i11=(y1*RW+x1)<<2, bx=1-ax, by=1-ay;
+      sr+=(cd[i00]*bx+cd[i01]*ax)*by+(cd[i10]*bx+cd[i11]*ax)*ay;
+      sg+=(cd[i00+1]*bx+cd[i01+1]*ax)*by+(cd[i10+1]*bx+cd[i11+1]*ax)*ay;
+      sb+=(cd[i00+2]*bx+cd[i01+2]*ax)*by+(cd[i10+2]*bx+cd[i11+2]*ax)*ay;}
+    let r=LR[(sr/m2+.5)|0], gg=LG[(sg/m2+.5)|0], bb=LB[(sb/m2+.5)|0];
+    if(satF!==1){const l=.299*r+.587*gg+.114*bb; r=l+(r-l)*satF; gg=l+(gg-l)*satF; bb=l+(bb-l)*satF;}
+    od[oi]=r; od[oi+1]=gg; od[oi+2]=bb; od[oi+3]=255;}}
+  sharpenData(od,Wo,Ho);
   const oc=document.createElement('canvas'); oc.width=Wo; oc.height=Ho;
-  const x=oc.getContext('2d',{willReadFrequently:true}); x.putImageData(out,0,0);
-  sharpen(x,Wo,Ho);
+  oc.getContext('2d').putImageData(out,0,0);
   return {canvas:oc,info:{white:false,ok:A.ok,kind:R.kind,angle:R.angle,autoDeg:R.autoDeg,color:colorDone,Wo,Ho,quad:R.quad}};
 }
 
@@ -1102,8 +1158,8 @@ function targets(){const sel=photos.filter(q=>q.sel); const c=photos[cur]; if(c&
 /* ================= saved session (photos + edits survive closing the app) ================= */
 const IDB={ready:null};
 function idbOpen(){ if(IDB.ready) return IDB.ready;
-  IDB.ready=new Promise(res=>{try{const r=indexedDB.open('studio-catalogue',1);
-    r.onupgradeneeded=()=>{const d=r.result; if(!d.objectStoreNames.contains('files')) d.createObjectStore('files'); if(!d.objectStoreNames.contains('meta')) d.createObjectStore('meta');};
+  IDB.ready=new Promise(res=>{try{const r=indexedDB.open('studio-catalogue',2);
+    r.onupgradeneeded=()=>{const d=r.result; for(const n of ['files','meta','prefs']) if(!d.objectStoreNames.contains(n)) d.createObjectStore(n);};
     r.onsuccess=()=>res(r.result); r.onerror=()=>res(null); r.onblocked=()=>res(null);}catch(e){res(null);}});
   return IDB.ready; }
 function idbDo(store,mode,fn){ return idbOpen().then(db=>{ if(!db) return null; return new Promise(res=>{ try{ const tx=db.transaction(store,mode), r=fn(tx.objectStore(store));
@@ -1136,6 +1192,7 @@ function invalidate(){gen++; photos.forEach(p=>{p.dirty=true;}); kick();}
 async function kick(){
   if(running) return; running=true;
   while(true){
+    if(exporting) break;
     const c=photos[cur]; const p=(c&&c.dirty)?c:photos.find(q=>q.dirty);
     if(!p) break;
     p.dirty=false; p.status='busy'; if(p===photos[cur]) $('#busy').hidden=false; drawStrip();
@@ -1329,6 +1386,7 @@ stage.addEventListener('pointermove',e=>{if(dragging) setSplit(e);});
 stage.addEventListener('pointerup',()=>{dragging=false;}); stage.addEventListener('pointercancel',()=>{dragging=false;});
 let peek=null;
 window.addEventListener('keydown',e=>{
+  if(!$('#exportDlg').hidden) { if(e.key==='Enter'&&!exporting&&!$('#xGo').hidden&&!(e.target.closest&&e.target.closest('button,input[type=text]'))){e.preventDefault(); $('#xGo').click();} return; }
   if(e.target.closest&&e.target.closest('input,select,textarea')) return;
   if(editing){ if(e.key==='Escape'){e.preventDefault(); $('#editCancel').click();} else if(e.key==='Enter'){e.preventDefault(); $('#editOk').click();} return; }
   if((e.ctrlKey||e.metaKey)&&(e.key==='a'||e.key==='A')&&photos.length){e.preventDefault(); photos.forEach(q=>{q.sel=true;}); drawStrip(); return;}
@@ -1389,44 +1447,107 @@ $('#editAuto').addEventListener('click',()=>{const p=photos[cur]; if(p){p.corner
 $('#editOk').addEventListener('click',()=>{const p=photos[cur]; if(p){p.corners=ec.map(c=>c.slice()); p.fine=0; p.dirty=true; saveEdits(p); gen++;} exitEdit(); drawStrip(); kick();});
 
 /* export */
-let dl=null, exporting=false;
+let dl=null, exporting=false, cancelExport=false;
 async function saveFile(name,blob){
   if(window.claude&&window.claude.use){
     try{ dl=dl||await window.claude.use('downloads'); }catch(e){ dl=null; }
-    if(!dl){ toast("L'enregistrement de fichiers n'est pas disponible dans cet affichage."); return; }
-    try{ await dl.save({filename:name,data:blob}); toast('Fichier enregistré : '+name); }
-    catch(e){ const c=e&&e.code; toast(c==='declined'?'Enregistrement annulé.':c==='rate_limited'?'Une fenêtre d\'enregistrement est déjà ouverte.':c==='too_large'?'Fichier trop lourd : choisissez une taille plus petite.':"L'enregistrement n'a pas abouti."); }
-    return;
+    if(!dl){ toast("L'enregistrement de fichiers n'est pas disponible dans cet affichage."); return false; }
+    try{ await dl.save({filename:name,data:blob}); return true; }
+    catch(e){ const c=e&&e.code; toast(c==='declined'?'Enregistrement annulé.':c==='rate_limited'?'Une fenêtre d\'enregistrement est déjà ouverte.':c==='too_large'?'Fichier trop lourd : choisissez une taille plus petite.':"L'enregistrement n'a pas abouti."); return false; }
   }
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href); a.remove();},4000);
+  return true;
 }
-async function renderExport(p){
-  await ensureSrc(p);
-  const {canvas,info}=render(p,Math.min(5000,Math.max(p.w,p.h)),+S.size);
-  const png=S.format==='png'; return toBlob(canvas,png?'image/png':'image/jpeg',.92);
+function renderExportSync(p){ const {canvas}=render(p,Math.min(5000,Math.max(p.w,p.h)),+S.size); return canvas; }
+
+/* ---- destination: a folder on the computer (Chrome / Edge) or a download ---- */
+const canPickFolder=(()=>{ try{ return typeof window.showDirectoryPicker==='function'&&window.top===window.self; }catch(e){ return false; } })();
+let destDir=null;
+async function loadDestDir(){ if(!canPickFolder) return; const h=await idbDo('prefs','readonly',st=>st.get('exportDir')); if(h&&h.kind==='directory') destDir=h; }
+async function pickFolder(){
+  try{ const h=await window.showDirectoryPicker({id:'studio-export',mode:'readwrite',startIn:destDir||'pictures'}); destDir=h; idbDo('prefs','readwrite',st=>st.put(h,'exportDir')); return true; }
+  catch(e){ return false; }
 }
-$('#exportOne').addEventListener('click',async()=>{
-  const p=photos[cur]; if(!p||exporting) return; exporting=true; const btn=$('#exportOne'); btn.disabled=true; btn.textContent='Préparation…';
-  try{ await sleep(30); const b=await renderExport(p); await saveFile(fileNames()[cur],b); }
-  catch(e){console.error(e); toast("L'export a échoué. Essayez une taille plus petite.");}
-  btn.disabled=false; btn.textContent='Exporter cette photo'; exporting=false;
-});
-$('#exportAll').addEventListener('click',async()=>{
-  if(!photos.length||exporting) return; exporting=true; const btn=$('#exportAll'), lab=$('#exportAll span'); btn.disabled=true;
+async function folderAllowed(h){ try{ const o={mode:'readwrite'}; if(await h.queryPermission(o)==='granted') return true; return (await h.requestPermission(o))==='granted'; }catch(e){ return false; } }
+async function uniqueName(dir,name){
+  const dot=name.lastIndexOf('.'), base=name.slice(0,dot), ext=name.slice(dot); let n=name, j=2;
+  while(true){ try{ await dir.getFileHandle(n); n=base+'-'+(j++)+ext; }catch(e){ return n; } }
+}
+async function writeTo(dir,name,blob){ const fh=await dir.getFileHandle(name,{create:true}); const w=await fh.createWritable(); await w.write(blob); await w.close(); }
+
+const dlg=$('#exportDlg');
+let dlgItems=[];
+function today(){const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function openExport(which){
+  if(exporting||!photos.length) return;
+  const names=fileNames(), sel=photos.filter(q=>q.sel);
+  const list=which==='one'?[photos[cur]]:(sel.length>1?sel:photos);
+  dlgItems=list.map(p=>({p,name:names[photos.indexOf(p)]}));
+  $('#xTitle').textContent=dlgItems.length>1?'Exporter '+dlgItems.length+' photos':'Exporter la photo';
+  $('#xSummary').textContent=(S.format==='png'?'PNG':'JPEG')+' · côté long '+Number(S.size).toLocaleString('fr-FR')+' px · '+(dlgItems.length>1?dlgItems[0].name+' … '+dlgItems[dlgItems.length-1].name:dlgItems[0].name);
+  $('#xFolderRow').hidden=!canPickFolder; $('#xNoFolder').hidden=canPickFolder;
+  $('#xZipLabel').textContent=dlgItems.length>1?'Télécharger un fichier ZIP':'Télécharger la photo';
+  $('#xSub').value=$('#xSub').value||('Retouches '+today());
+  if(canPickFolder&&destDir){ $('#xDestFolder').checked=true; } else if(!canPickFolder){ $('#xDestZip').checked=true; }
+  updateDest(); $('#xProgress').hidden=true; $('#xForm').hidden=false; $('#xGo').disabled=false; $('#xGo').hidden=false; $('#xCancel').textContent='Annuler';
+  dlg.hidden=false; setTimeout(()=>$('#xGo').focus(),0);
+}
+function updateDest(){
+  const folder=canPickFolder&&$('#xDestFolder').checked;
+  $('#xFolderName').textContent=destDir?destDir.name:'Aucun dossier choisi';
+  $('#xPick').textContent=destDir?'Changer de dossier':'Choisir un dossier';
+  $('#xSubRow').hidden=!folder;
+  $('#xGo').textContent=folder?(destDir?'Enregistrer dans « '+destDir.name+' »':'Choisir le dossier et enregistrer'):'Télécharger';
+}
+function closeExport(){ if(exporting){ cancelExport=true; return; } dlg.hidden=true; }
+$('#xPick').addEventListener('click',async()=>{ if(await pickFolder()){ $('#xDestFolder').checked=true; updateDest(); } });
+document.querySelectorAll('input[name=xdest]').forEach(el=>el.addEventListener('change',updateDest));
+$('#xCancel').addEventListener('click',closeExport);
+dlg.addEventListener('click',e=>{ if(e.target===dlg&&!exporting) closeExport(); });
+dlg.addEventListener('keydown',e=>{ if(e.key==='Escape'){e.preventDefault(); e.stopPropagation(); closeExport();} });
+function progress(k,n,label){ $('#xBar').style.width=Math.round(100*k/n)+'%'; $('#xStep').textContent=label; }
+$('#xGo').addEventListener('click',async()=>{
+  const folder=canPickFolder&&$('#xDestFolder').checked;
+  let dir=null;
+  if(folder){
+    if(!destDir&&!(await pickFolder())) return;
+    if(!(await folderAllowed(destDir))){ toast("Le navigateur n'a pas donné accès au dossier. Choisissez-le à nouveau."); destDir=null; updateDest(); return; }
+    dir=destDir; const sub=$('#xSub').value.trim().replace(/[\\/:*?"<>|]+/g,'-');
+    if(sub){ try{ dir=await destDir.getDirectoryHandle(sub,{create:true}); }catch(e){ toast("Impossible de créer le sous-dossier « "+sub+" »."); return; } }
+  }
+  exporting=true; cancelExport=false; $('#xForm').hidden=true; $('#xProgress').hidden=false; $('#xGo').hidden=true; $('#xCancel').textContent='Arrêter';
+  const n=dlgItems.length, t0=performance.now(); let done=0, failed=0; const pending=[];
   try{
-    const names=fileNames();
-    if(photos.length===1){ lab.textContent='Préparation…'; await sleep(30); await saveFile(names[0],await renderExport(photos[0])); }
-    else{
-      if(typeof JSZip==='undefined') throw new Error('zip');
-      const zip=new JSZip();
-      for(let k=0;k<photos.length;k++){ lab.textContent='Photo '+(k+1)+' / '+photos.length+'…'; await sleep(20); zip.file(names[k],await renderExport(photos[k])); }
-      lab.textContent='Compression…';
-      const blob=await zip.generateAsync({type:'blob',compression:'STORE'});
-      await saveFile('photos-retouchees.zip',blob);
+    const zip=(!folder&&n>1)?(typeof JSZip!=='undefined'?new JSZip():null):null;
+    if(!folder&&n>1&&!zip) throw new Error('zip');
+    for(let k=0;k<n;k++){
+      if(cancelExport) break;
+      const {p,name}=dlgItems[k];
+      const left=k?Math.round((performance.now()-t0)/k*(n-k)/1000):null;
+      progress(k,n,'Photo '+(k+1)+' sur '+n+(left!==null&&left>2?' · environ '+(left<60?left+' s':Math.round(left/60)+' min')+' restantes':''));
+      await sleep(0);
+      await ensureSrc(p);
+      const canvas=withS(p,()=>renderExportSync(p));
+      // encoding and writing run in the background while the next photo is computed
+      const job=toBlob(canvas,S.format==='png'?'image/png':'image/jpeg',.92).then(async blob=>{
+        if(folder){ const nm=await uniqueName(dir,name); await writeTo(dir,nm,blob); }
+        else if(zip) zip.file(name,blob);
+        else await saveFile(name,blob);
+        done++;
+      }).catch(e=>{console.error(e); failed++;});
+      pending.push(job); if(pending.length>=3) await pending.shift();
     }
-  }catch(e){console.error(e); toast(e&&e.message==='zip'?"Le module ZIP n'a pas pu se charger. Exportez les photos une par une.":"L'export a échoué. Essayez une taille plus petite.");}
-  btn.disabled=false; exporting=false; drawStrip();
+    await Promise.all(pending);
+    if(zip&&done){ progress(n,n,'Création du fichier ZIP…'); await sleep(0); const blob=await zip.generateAsync({type:'blob',compression:'STORE'}); await saveFile('photos-retouchees-'+today()+'.zip',blob); }
+    const secs=Math.round((performance.now()-t0)/100)/10;
+    const where=folder?' dans « '+destDir.name+(dir!==destDir?' / '+dir.name:'')+' »':'';
+    progress(n,n,(cancelExport?'Export arrêté : ':'')+done+' photo'+(done>1?'s':'')+' enregistrée'+(done>1?'s':'')+where+' en '+secs.toLocaleString('fr-FR')+' s'+(failed?' · '+failed+' en erreur':''));
+  }catch(e){ console.error(e); progress(0,1,e&&e.message==='zip'?"Le module ZIP n'a pas pu se charger. Exportez les photos une par une.":"L'export a échoué. Essayez une taille plus petite."); }
+  exporting=false; $('#xCancel').textContent='Fermer'; drawStrip(); kick();
 });
+$('#exportOne').addEventListener('click',()=>openExport('one'));
+$('#exportAll').addEventListener('click',()=>openExport('all'));
+loadDestDir();
 let tt=0;
 function toast(m){const t=$('#toast'); t.textContent=m; t.hidden=false; clearTimeout(tt); tt=setTimeout(()=>{t.hidden=true;},3800);}
 
