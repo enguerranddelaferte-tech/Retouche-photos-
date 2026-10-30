@@ -460,7 +460,11 @@ function analyze(p){
   }
   const obj=new Uint8Array(N); for(let i=0;i<N;i++) obj[i]=vis[i]?0:1;
   let cp=components(obj,W,H); const largest=cp.sizes.length?Math.max(...cp.sizes):0;
-  const keep=cp.sizes.map(s=>s>=Math.max(N*.0015,largest*.03));
+  const cbox=cp.sizes.map(()=>[1e9,1e9,-1e9,-1e9]);
+  for(let i=0;i<N;i++) if(obj[i]){const b=cbox[cp.lab[i]], x=i%W, y=(i/W)|0; if(x<b[0])b[0]=x; if(y<b[1])b[1]=y; if(x>b[2])b[2]=x; if(y>b[3])b[3]=y;}
+  const big=cp.sizes.indexOf(largest), BB=big>=0?cbox[big]:[0,0,0,0], gapMax=.25*Math.max(W,H);
+  const keep=cp.sizes.map((sz,k)=>{ if(sz>=Math.max(N*.0015,largest*.03)) return true; if(sz<Math.max(6,N*.0004)) return false;
+    const b=cbox[k], gx=Math.max(0,b[0]-BB[2],BB[0]-b[2]), gy=Math.max(0,b[1]-BB[3],BB[1]-b[3]); return Math.hypot(gx,gy)<gapMax; });
   for(let i=0;i<N;i++) if(obj[i]&&!keep[cp.lab[i]]) obj[i]=0;
   const inv=new Uint8Array(N); for(let i=0;i<N;i++) inv[i]=obj[i]?0:1;
   cp=components(inv,W,H);
@@ -480,10 +484,14 @@ function analyze(p){
   // backdrop must be plain (wall, paper, cloth): textured tables or cluttered scenes are left alone
   let res=0,rn=0; for(let i=0;i<N;i+=2) if(vis[i]===1){const yb=.299*bR[i]+.587*bG[i]+.114*bB[i]; res+=Math.abs(Y[i]-yb); rn++;}
   const bgResid=rn?res/rn:99;
-  const cropOk=ok&&seedFrac>.6&&touchSides<=1&&bgFrac>.12&&bgResid<5.5;
+  let cropOk=ok&&seedFrac>.6&&touchSides<=1&&bgFrac>.12&&bgResid<5.5;
+  // object the same tone as the backdrop (white on white, grey on grey): find it by its outline instead
+  let edgePts=null;
+  if(!cropOk&&seedFrac>.6&&bgResid<5.5&&nObj<N*.02){ edgePts=edgeOutline(W,H,Y,noise); if(edgePts) cropOk=true; }
   // white balance reference: the backdrop itself, only if it is close to neutral
   let grey=null; if(cropOk){let gr=0,gg=0,gb=0,gn=0; for(let i=0;i<N;i++) if(vis[i]===1){const r=R[i],g=G[i],b=B[i],mx=Math.max(r,g,b),mn=Math.min(r,g,b),l=.299*r+.587*g+.114*b; if(l>45&&mx>0&&(mx-mn)/mx<.28){gr+=r;gg+=g;gb+=b;gn++;}}
     if(gn>rn*1.2) grey=[gr/gn,gg/gn,gb/gn];}
+  const cpts=edgePts||(cropOk?coreOutline(W,H,R,G,B,Y,bR,bG,bB,solid,vis,noise):null);
   const pts=[]; for(let y=0;y<H;y++)for(let x=0;x<W;x++){const i=y*W+x; if(!solid[i]) continue;
     if(x===0||y===0||x===W-1||y===H-1||!solid[i-1]||!solid[i+1]||!solid[i-W]||!solid[i+W]) pts.push(x+.5,y+.5);}
   const area=a=>{const cs=Math.cos(a),sn=Math.sin(a); let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
@@ -498,7 +506,7 @@ function analyze(p){
   if(!sn){sr=R[0];sg=G[0];sb=B[0];sn=1;}
   const bgMean=[sr/sn,sg/sn,sb/sn];
   const mx=Math.max(...bgMean), mn=Math.min(...bgMean), bsat=mx>0?(mx-mn)/mx:0;
-  const an={W,H,er,di,bR,bG,bB,T,ok,cropOk,bgFrac,angle,pts,bgMean,bsat,wp,grey,quad:null,level:0};
+  const an={W,H,er,di,bR,bG,bB,T,ok,cropOk,bgFrac,angle,pts,cpts,bgMean,bsat,wp,grey,quad:null,level:0};
   // 1) straight edges anywhere in the photo; 2) outline on a plain backdrop as a fallback
   let la=null; try{la=lineAnalysis(p);}catch(e){console.error(e);}
   if(la){an.quad=la.quad; an.level=la.level;}
@@ -506,6 +514,77 @@ function analyze(p){
   p.an=an; p.anKey=key; return an;
 }
 
+function sobelMag(Y,W,H){const gm=new Float32Array(W*H);
+  for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){const i=y*W+x;
+    const gx=(Y[i-W+1]+2*Y[i+1]+Y[i+W+1])-(Y[i-W-1]+2*Y[i-1]+Y[i+W-1]), gy=(Y[i+W-1]+2*Y[i+W]+Y[i+W+1])-(Y[i-W-1]+2*Y[i-W]+Y[i-W+1]);
+    gm[i]=Math.hypot(gx,gy)/4;} return gm;}
+/* outline of an object that blends with the backdrop: sharp edges only, grouped around the main cluster */
+function edgeOutline(W,H,Y,noise){
+  const N=W*H, gm=sobelMag(Y,W,H), bw=Math.round(.02*Math.max(W,H))+1, thr=Math.max(8,4*noise), ed=new Uint8Array(N);
+  const Ys=(x,y)=>{x=Math.max(0,Math.min(W-1,Math.round(x))); y=Math.max(0,Math.min(H-1,Math.round(y))); return Y[y*W+x];};
+  for(let y=bw;y<H-bw;y++)for(let x=bw;x<W-bw;x++){const i=y*W+x; if(gm[i]<thr) continue;
+    const gx=(Y[i+1]-Y[i-1]), gy=(Y[i+W]-Y[i-W]), gl=Math.hypot(gx,gy)||1, ux=gx/gl, uy=gy/gl;
+    const D=Math.abs(Ys(x+4*ux,y+4*uy)-Ys(x-4*ux,y-4*uy)); if(D<1||gm[i]/D<.45) continue; ed[i]=1;}
+  const ce=components(ed,W,H); if(!ce.sizes.length) return null;
+  const box=ce.sizes.map(()=>[1e9,1e9,-1e9,-1e9]);
+  for(let i=0;i<N;i++) if(ed[i]){const b=box[ce.lab[i]], x=i%W, y=(i/W)|0; if(x<b[0])b[0]=x; if(y<b[1])b[1]=y; if(x>b[2])b[2]=x; if(y>b[3])b[3]=y;}
+  const okc=ce.sizes.map((sz,k)=>{const b=box[k]; return sz>=10&&b[2]-b[0]<.75*W&&b[3]-b[1]<.75*H&&b[0]>bw+1&&b[1]>bw+1&&b[2]<W-bw-2&&b[3]<H-bw-2;});
+  let main=-1; ce.sizes.forEach((sz,k)=>{if(okc[k]&&(main<0||sz>ce.sizes[main])) main=k;}); if(main<0||ce.sizes[main]<.15*Math.max(W,H)) return null;
+  // grow the group from the main outline: pieces close to it belong to the object
+  const grp=new Set([main]); let gb=box[main].slice(), changed=true, gap=.12*Math.max(W,H);
+  while(changed){changed=false; ce.sizes.forEach((sz,k)=>{ if(grp.has(k)||!okc[k]) return; const b=box[k];
+    const dx=Math.max(0,b[0]-gb[2],gb[0]-b[2]), dy=Math.max(0,b[1]-gb[3],gb[1]-b[3]); if(Math.hypot(dx,dy)<gap){grp.add(k); gb=[Math.min(gb[0],b[0]),Math.min(gb[1],b[1]),Math.max(gb[2],b[2]),Math.max(gb[3],b[3])]; changed=true;} });}
+  const area=(gb[2]-gb[0])*(gb[3]-gb[1]); if(area<.02*N||area>.85*N) return null;
+  const out=[]; for(let i=0;i<N;i++) if(ed[i]&&grp.has(ce.lab[i])) out.push(i%W+.5,((i/W)|0)+.5);
+  return out;
+}
+/* the object itself, for cropping: cast shadows removed, faint outlines (white on white) added */
+function coreOutline(W,H,R,G,B,Y,bR,bG,bB,solid,vis,noise){
+  const N=W*H, gm=new Float32Array(N);
+  for(let y=1;y<H-1;y++)for(let x=1;x<W-1;x++){const i=y*W+x;
+    const gx=(Y[i-W+1]+2*Y[i+1]+Y[i+W+1])-(Y[i-W-1]+2*Y[i-1]+Y[i+W-1]), gy=(Y[i+W-1]+2*Y[i+W]+Y[i+W+1])-(Y[i-W-1]+2*Y[i-W]+Y[i-W+1]);
+    gm[i]=Math.hypot(gx,gy)/4;}
+  // 1) shadow: same colour as the backdrop, only darker, and smooth
+  let nObj=0; const sh=new Uint8Array(N);
+  for(let i=0;i<N;i++){ if(!solid[i]) continue; nObj++;
+    const yb=.299*bR[i]+.587*bG[i]+.114*bB[i]; if(yb<20) continue;
+    // darker than the backdrop (shadow) or indistinguishable from it (backdrop the region growing missed)
+    const L=Y[i]/yb; if(L<.3||L>1.04) continue;
+    const rr=R[i]/Math.max(1,bR[i])/L, gg=G[i]/Math.max(1,bG[i])/L, bb=B[i]/Math.max(1,bB[i])/L;
+    if(Math.max(rr,gg,bb)-Math.min(rr,gg,bb)>.09) continue;
+    // shadows have soft edges; an object outline is a sharp step
+    if(gm[i]>Math.max(18,4*noise)) continue;
+    sh[i]=1; }
+  // a shadow region must touch the backdrop; otherwise it is a dark part of the object
+  const cs=components(sh,W,H), touchBg=new Uint8Array(cs.sizes.length);
+  for(let i=0;i<N;i++) if(sh[i]){const x=i%W; if((x>0&&vis[i-1]===1)||(x<W-1&&vis[i+1]===1)||(i>=W&&vis[i-W]===1)||(i<N-W&&vis[i+W]===1)) touchBg[cs.lab[i]]=1;}
+  const core=new Uint8Array(N); let nCore=0;
+  for(let i=0;i<N;i++) if(solid[i]&&!(sh[i]&&touchBg[cs.lab[i]])){core[i]=1; nCore++;}
+  // leftover fringe of a removed shadow: keep only pieces of real size
+  { const cc=components(core,W,H), mxs=cc.sizes.length?Math.max(...cc.sizes):0;
+    for(let i=0;i<N;i++) if(core[i]&&cc.sizes[cc.lab[i]]<Math.max(8,mxs*.02)){core[i]=0; nCore--;} }
+  if(nCore<.4*nObj){ core.set(solid); }
+  // 2) clear outlines near the object that the colour test missed (white porcelain on white)
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; for(let i=0;i<N;i++) if(core[i]){const x=i%W,y=(i/W)|0; if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y;}
+  if(x1<0) return null;
+  const ex=.12*W, ey=.12*H, bw=Math.round(.015*Math.max(W,H))+1, thr=Math.max(10,4*noise), ed=new Uint8Array(N);
+  const Ys=(x,y)=>{x=Math.max(0,Math.min(W-1,Math.round(x))); y=Math.max(0,Math.min(H-1,Math.round(y))); return Y[y*W+x];};
+  for(let y=bw;y<H-bw;y++)for(let x=bw;x<W-bw;x++){const i=y*W+x; if(core[i]||vis[i]!==1||gm[i]<thr) continue; if(x<x0-ex||x>x1+ex||y<y0-ey||y>y1+ey) continue;
+    // only sharp steps (an outline); the soft ramp at the edge of a shadow is left out
+    const gx=(Y[i+1]-Y[i-1]), gy=(Y[i+W]-Y[i-W]), gl=Math.hypot(gx,gy)||1, ux=gx/gl, uy=gy/gl;
+    const D=Math.abs(Ys(x+4*ux,y+4*uy)-Ys(x-4*ux,y-4*uy)); if(D<1||gm[i]/D<.45) continue;
+    ed[i]=1;}
+  const ce=components(ed,W,H), ebox=ce.sizes.map(()=>[1e9,1e9,-1e9,-1e9]);
+  for(let i=0;i<N;i++) if(ed[i]){const b=ebox[ce.lab[i]], x=i%W, y=(i/W)|0; if(x<b[0])b[0]=x; if(y<b[1])b[1]=y; if(x>b[2])b[2]=x; if(y>b[3])b[3]=y;}
+  const okE=ce.sizes.map((sz,k)=>{const b=ebox[k]; if(sz<10) return false;
+    // long straight lines (table edge, wall corner) are scenery, not object
+    if(b[2]-b[0]>1.3*(x1-x0)+ex||b[3]-b[1]>1.3*(y1-y0)+ey) return false;
+    if(b[0]<=bw+1||b[2]>=W-bw-2||b[1]<=bw+1||b[3]>=H-bw-2) return false; return true;});
+  for(let i=0;i<N;i++) if(ed[i]&&okE[ce.lab[i]]) core[i]=1;
+  const out=[]; for(let y=0;y<H;y++)for(let x=0;x<W;x++){const i=y*W+x; if(!core[i]) continue;
+    if(x===0||y===0||x===W-1||y===H-1||!core[i-1]||!core[i+1]||!core[i-W]||!core[i+W]) out.push(x+.5,y+.5);}
+  return out.length>20?out:null;
+}
 /* find a 4-sided object (frame, print, book) and refine its edges on a sharper image */
 function detectQuad(p,A,pts,nSolid){
   const W=A.W,H=A.H; const P=[]; for(let k=0;k<pts.length;k+=2) P.push([pts[k],pts[k+1]]);
@@ -755,9 +834,12 @@ function rectAspect(q,u0,v0,L){
   if(Math.abs(n2[2]*n3[2])<1e-12) return null;
   const f2=-((n2[0]*n3[0]-(n2[0]*n3[2]+n2[2]*n3[0])*u0+n2[2]*n3[2]*u0*u0)+(n2[1]*n3[1]-(n2[1]*n3[2]+n2[2]*n3[1])*v0+n2[2]*n3[2]*v0*v0))/(n2[2]*n3[2]);
   // focal length from the shape itself when plausible, otherwise a typical phone / camera lens
-  let f=f2>0?Math.sqrt(f2):0; if(!(f>=.55*L&&f<=3.5*L)) f=.85*L;
-  const nn=n=>{const a=(n[0]-u0*n[2])/f, b=(n[1]-v0*n[2])/f; return a*a+b*b+n[2]*n[2];};
-  const r=Math.sqrt(nn(n2)/nn(n3)); return isFinite(r)&&r>.1&&r<10?r:null;
+  // the focal length estimated from one quad is fragile: trust it only when it agrees with a typical lens
+  const ratio=f=>{const nn=n=>{const a=(n[0]-u0*n[2])/f, b=(n[1]-v0*n[2])/f; return a*a+b*b+n[2]*n[2];}; return Math.sqrt(nn(n2)/nn(n3));};
+  const rTyp=ratio(.85*L); let r=rTyp;
+  const fe=f2>0?Math.sqrt(f2):0;
+  if(fe>=.55*L&&fe<=2.5*L){const re=ratio(fe); if(isFinite(re)&&Math.abs(re/rTyp-1)<.12) r=re;}
+  return isFinite(r)&&r>.1&&r<10?r:null;
 }
 function rotQuadPx(q,deg,cx,cy){const t=deg*Math.PI/180,c=Math.cos(t),s=Math.sin(t); return q.map(([x,y])=>{const X=x-cx,Y=y-cy; return [cx+X*c+Y*s, cy-X*s+Y*c];});}
 function regionQuad(p,A){
@@ -777,9 +859,11 @@ function regionQuad(p,A){
   let rect;
   const doCrop=S.autocrop&&!off.crop&&A.cropOk;
   if(doCrop){
-    let mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9;
-    for(let k=0;k<A.pts.length;k+=2){const X=A.pts[k]-cx,Y=A.pts[k+1]-cy, rx=X*c-Y*s, ry=X*s+Y*c; if(rx<mnx)mnx=rx; if(rx>mxx)mxx=rx; if(ry<mny)mny=ry; if(ry>mxy)mxy=ry;}
-    rect=[mnx-.5,mny-.5,mxx+.5,mxy+.5];
+    let mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9; const P=A.cpts||A.pts;
+    for(let k=0;k<P.length;k+=2){const X=P[k]-cx,Y=P[k+1]-cy, rx=X*c-Y*s, ry=X*s+Y*c; if(rx<mnx)mnx=rx; if(rx>mxx)mxx=rx; if(ry<mny)mny=ry; if(ry>mxy)mxy=ry;}
+    // safety band: about 1.2 % of the photo, never less than 1.5 analysis pixels
+    const pad=Math.max(1.5,.012*Math.max(W,H));
+    rect=[mnx-pad,mny-pad,mxx+pad,mxy+pad];
   } else {
     const k=1/Math.max((W*Math.abs(c)+H*Math.abs(s))/W,(W*Math.abs(s)+H*Math.abs(c))/H);
     rect=[-W*k/2,-H*k/2,W*k/2,H*k/2];
