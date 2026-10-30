@@ -15,7 +15,15 @@ Retouche automatique et gratuite de photos de lots (tableaux, gravures, livres, 
 
 En ligne : https://enguerranddelaferte-tech.github.io/Retouche-photos-/
 
-Ou ouvrir `index.html` directement dans un navigateur.
+### Sur ordinateur
+
+- **Installer l'appli** : ouvrir l'adresse dans Chrome ou Edge, puis cliquer sur « Installer l'appli » (ou l'icône d'installation dans la barre d'adresse). Studio Catalogue s'ouvre alors dans sa propre fenêtre, fonctionne hors ligne et apparaît dans « Ouvrir avec » pour les photos.
+- **Importer un dossier** entier de photos, les glisser-déposer, ou coller une image avec Ctrl+V
+- **Raccourcis clavier** : ← → photo précédente / suivante, Espace maintenu pour voir l'original, R pivoter, C ajuster les coins, E exporter la photo, Maj+E tout exporter, Suppr retirer
+
+### Sur téléphone
+
+Ouvrir l'adresse dans le navigateur ; « Ajouter à l'écran d'accueil » pour l'avoir comme une appli.
 
 ## Limites
 
