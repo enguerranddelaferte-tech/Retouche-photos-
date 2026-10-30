@@ -93,7 +93,7 @@ select,input[type=text],input[type=number]{width:100%;background:var(--surface-2
 .stage{position:relative;height:clamp(320px, 64vh, 780px);background:var(--stage);border-radius:12px;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none;cursor:ew-resize}
 .stage.checker .after-layer{background-color:var(--checker-b);background-image:linear-gradient(45deg,var(--checker-a) 25%,transparent 25%,transparent 75%,var(--checker-a) 75%),linear-gradient(45deg,var(--checker-a) 25%,transparent 25%,transparent 75%,var(--checker-a) 75%);background-size:20px 20px;background-position:0 0,10px 10px}
 .layer{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:18px}
-.layer img{max-width:100%;max-height:100%;object-fit:contain;display:block;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.layer img{max-width:100%;max-height:100%;object-fit:contain;display:block;box-shadow:0 1px 3px rgba(0,0,0,.25);pointer-events:none;-webkit-user-drag:none;user-select:none}
 .after-layer{clip-path:inset(0 0 0 var(--split,50%));background:var(--stage)}
 .divider{position:absolute;top:0;bottom:0;left:var(--split,50%);width:2px;margin-left:-1px;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.25);pointer-events:none}
 .divider span{position:absolute;top:50%;left:50%;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.35);display:grid;place-items:center;color:#222;font:600 13px var(--mono)}
@@ -303,8 +303,8 @@ button.togchip:hover{border-color:var(--warn);color:var(--warn)}
 
     <div class="main">
       <div class="stage" id="stage" aria-label="Comparaison avant / après. Glissez pour déplacer la séparation.">
-        <div class="layer before-layer"><img id="imgBefore" alt="Photo d'origine"></div>
-        <div class="layer after-layer"><img id="imgAfter" alt="Photo retouchée"></div>
+        <div class="layer before-layer"><img id="imgBefore" alt="Photo d'origine" draggable="false"></div>
+        <div class="layer after-layer"><img id="imgAfter" alt="Photo retouchée" draggable="false"></div>
         <div class="divider"><span>⇔</span></div>
         <span class="tag l">Avant</span><span class="tag r">Après</span>
         <div class="editor" id="editor" hidden>
@@ -1400,9 +1400,12 @@ $('#fineRot').addEventListener('input',e=>{const p=photos[cur]; if(!p) return; p
 /* compare slider */
 const stage=$('#stage'); let dragging=false;
 function setSplit(e){const r=stage.getBoundingClientRect(); const v=Math.min(100,Math.max(0,(e.clientX-r.left)/r.width*100)); stage.style.setProperty('--split',v+'%');}
-stage.addEventListener('pointerdown',e=>{if(editing) return; dragging=true; stage.setPointerCapture(e.pointerId); setSplit(e);});
+// mouse: no native image drag, so the slider follows the pointer on a computer too
+stage.addEventListener('dragstart',e=>e.preventDefault());
+stage.addEventListener('pointerdown',e=>{if(editing||e.button>0) return; if(e.pointerType==='mouse') e.preventDefault(); dragging=true; try{stage.setPointerCapture(e.pointerId);}catch(_){} setSplit(e);});
 stage.addEventListener('pointermove',e=>{if(dragging) setSplit(e);});
-stage.addEventListener('pointerup',()=>{dragging=false;}); stage.addEventListener('pointercancel',()=>{dragging=false;});
+const endSplit=()=>{dragging=false;}; stage.addEventListener('pointerup',endSplit); stage.addEventListener('pointercancel',endSplit); stage.addEventListener('lostpointercapture',endSplit);
+stage.addEventListener('dblclick',()=>{if(!editing) stage.style.setProperty('--split','50%');});
 let peek=null;
 window.addEventListener('keydown',e=>{
   if(!$('#exportDlg').hidden) { if(e.key==='Enter'&&!exporting&&!$('#xGo').hidden&&!(e.target.closest&&e.target.closest('button,input[type=text]'))){e.preventDefault(); $('#xGo').click();} return; }
