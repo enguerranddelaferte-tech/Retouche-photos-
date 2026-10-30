@@ -106,6 +106,10 @@ select,input[type=text],input[type=number]{width:100%;background:var(--surface-2
 .chip.ok{color:var(--ok);border-color:color-mix(in srgb, var(--ok) 45%, transparent)}
 .chip.warn{color:var(--warn);border-color:color-mix(in srgb, var(--warn) 45%, transparent)}
 .chip.ex{color:var(--accent);border-color:color-mix(in srgb, var(--accent) 45%, transparent)}
+button.chip{background:none;cursor:pointer;font-family:var(--mono)}
+button.togchip:hover{border-color:var(--warn);color:var(--warn)}
+.chip.offchip{border-style:dashed;color:var(--muted)}
+.chip.offchip:hover{color:var(--fg);border-color:var(--muted)}
 .tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .fine{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
 .fine input{width:120px}
@@ -263,7 +267,7 @@ select,input[type=text],input[type=number]{width:100%;background:var(--surface-2
       </div>
 
       <div class="strip" id="strip" aria-label="Photos"></div>
-      <p class="note" id="note">Les trois photos marquées « Exemple » sont fabriquées pour la démonstration : un tableau photographié de biais sous une lumière chaude, une gravure posée de travers sous une lumière froide, un vase penché. Elles disparaissent dès que vous ajoutez les vôtres. Rien n'est envoyé sur un serveur : tout le calcul se fait sur votre appareil.</p>
+      <p class="note" id="note">Les trois photos marquées « Exemple » sont fabriquées pour la démonstration : un tableau photographié de biais sous une lumière chaude, une gravure posée de travers sous une lumière froide, un vase sur fond uni. Elles disparaissent dès que vous ajoutez les vôtres. Chaque correction appliquée s'affiche sous la photo : cliquez dessus pour l'annuler sur cette photo seulement. Quand l'appli n'est pas sûre d'elle, elle ne touche à rien. Rien n'est envoyé sur un serveur : tout le calcul se fait sur votre appareil.</p>
     </div>
   </div>
 </div>
@@ -374,6 +378,7 @@ function analyze(p){
   let acc=0,lcut=255; for(let k=248;k>=0;k--){acc+=lh[k]; if(acc>=N*.03){lcut=k;break;}}
   let wr=0,wg=0,wb=0,wn=0; for(let i=0;i<N;i++){const l=.299*R[i]+.587*G[i]+.114*B[i]; if(l>=lcut&&l<=248&&R[i]<252&&G[i]<252&&B[i]<252){wr+=R[i];wg+=G[i];wb+=B[i];wn++;}}
   const wp=wn?[wr/wn,wg/wn,wb/wn]:[1,1,1];
+
   R=boxBlur(R,W,H,1);G=boxBlur(G,W,H,1);B=boxBlur(B,W,H,1);
   const Y=new Float32Array(N),U=new Float32Array(N),V=new Float32Array(N);
   for(let i=0;i<N;i++){const y=.299*R[i]+.587*G[i]+.114*B[i]; Y[i]=y; U[i]=B[i]-y; V[i]=R[i]-y;}
@@ -386,7 +391,9 @@ function analyze(p){
   const T=Math.min(26,Math.max(8,5*noise+7))*S.tol, Ts=Math.max(30,2.5*T), Tg=95*S.tol;
   const vis=new Uint8Array(N), q=new Int32Array(N), rY=new Float32Array(N), rU=new Float32Array(N), rV=new Float32Array(N);
   let h=0,t=0;
-  for(const i of border){ if(!vis[i]&&dist(i,my,mu,mv)<Ts){vis[i]=1;rY[i]=Y[i];rU[i]=U[i];rV[i]=V[i];q[t++]=i;} }
+  let seeds=0;
+  for(const i of border){ if(!vis[i]&&dist(i,my,mu,mv)<Ts){vis[i]=1;seeds++;rY[i]=Y[i];rU[i]=U[i];rV[i]=V[i];q[t++]=i;} }
+  const seedFrac=seeds/border.length;
   while(h<t){const p0=q[h++], x=p0%W, y=(p0/W)|0;
     const nb=[x>0?p0-1:-1, x<W-1?p0+1:-1, y>0?p0-W:-1, y<H-1?p0+W:-1];
     for(const n of nb){ if(n<0||vis[n]) continue;
@@ -419,6 +426,15 @@ function analyze(p){
       for(let dx=-2;dx<=2;dx++){const xx=x+dx; if(xx<0||xx>=W){ if(Math.abs(dx)<=1&&Math.abs(dy)<=1) all=0; continue;}
         const v=obj[yy*W+xx]; if(v) any=1; else if(Math.abs(dx)<=1&&Math.abs(dy)<=1) all=0;}}
     er[i]=all; di[i]=any;}
+  let touchSides=0; {const side=(n,get)=>{let c=0; for(let k=0;k<n;k++) c+=get(k); return c>n*.02;};
+    touchSides=side(W,k=>solid[k])+side(W,k=>solid[(H-1)*W+k])+side(H,k=>solid[k*W])+side(H,k=>solid[k*W+W-1]);}
+  // backdrop must be plain (wall, paper, cloth): textured tables or cluttered scenes are left alone
+  let res=0,rn=0; for(let i=0;i<N;i+=2) if(vis[i]===1){const yb=.299*bR[i]+.587*bG[i]+.114*bB[i]; res+=Math.abs(Y[i]-yb); rn++;}
+  const bgResid=rn?res/rn:99;
+  const cropOk=ok&&seedFrac>.6&&touchSides<=1&&bgFrac>.12&&bgResid<5.5;
+  // white balance reference: the backdrop itself, only if it is close to neutral
+  let grey=null; if(cropOk){let gr=0,gg=0,gb=0,gn=0; for(let i=0;i<N;i++) if(vis[i]===1){const r=R[i],g=G[i],b=B[i],mx=Math.max(r,g,b),mn=Math.min(r,g,b),l=.299*r+.587*g+.114*b; if(l>45&&mx>0&&(mx-mn)/mx<.28){gr+=r;gg+=g;gb+=b;gn++;}}
+    if(gn>rn*1.2) grey=[gr/gn,gg/gn,gb/gn];}
   const pts=[]; for(let y=0;y<H;y++)for(let x=0;x<W;x++){const i=y*W+x; if(!solid[i]) continue;
     if(x===0||y===0||x===W-1||y===H-1||!solid[i-1]||!solid[i+1]||!solid[i-W]||!solid[i+W]) pts.push(x+.5,y+.5);}
   const area=a=>{const cs=Math.cos(a),sn=Math.sin(a); let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
@@ -427,13 +443,14 @@ function analyze(p){
   let angle=0;
   if(ok&&pts.length>20){const a0=area(0); let best=0,ba=a0;
     for(let deg=-12;deg<=12;deg+=.25){const a=area(deg*Math.PI/180); if(a<ba-1e-6){ba=a;best=deg;}}
-    if(ba<a0*.975&&Math.abs(best)>=.5) angle=best;}
+    // only for clearly rectangular silhouettes (box, frame, book): never rotate a vase or a statue
+    if(ba<a0*.975&&Math.abs(best)>=.5&&nSolid/ba>.86) angle=best;}
   let sr=0,sg=0,sb=0,sn=0; for(let i=0;i<N;i+=3) if(!obj[i]){sr+=R[i];sg+=G[i];sb+=B[i];sn++;}
   if(!sn){sr=R[0];sg=G[0];sb=B[0];sn=1;}
   const bgMean=[sr/sn,sg/sn,sb/sn];
   const mx=Math.max(...bgMean), mn=Math.min(...bgMean), bsat=mx>0?(mx-mn)/mx:0;
-  const an={W,H,er,di,bR,bG,bB,T,ok,bgFrac,angle,pts,bgMean,bsat,wp,quad:null};
-  if(ok) an.quad=detectQuad(p,an,pts,nSolid);
+  const an={W,H,er,di,bR,bG,bB,T,ok,cropOk,bgFrac,angle,pts,bgMean,bsat,wp,grey,quad:null};
+  if(cropOk) an.quad=detectQuad(p,an,pts,nSolid);
   p.an=an; p.anKey=key; return an;
 }
 
@@ -466,7 +483,7 @@ function detectQuad(p,A,pts,nSolid){
   const f=Wm/W;
   const gs=(x,y)=>{if(x<0||y<0||x>=Wm-1||y>=Hm-1) return null; const x0=x|0,y0=y|0,ax=x-x0,ay=y-y0,i=y0*Wm+x0;
     return (Gm[i]*(1-ax)+Gm[i+1]*ax)*(1-ay)+(Gm[i+Wm]*(1-ax)+Gm[i+Wm+1]*ax)*ay;};
-  const lines=[]; let straight=0;
+  const lines=[]; let straight=0, goodN=0;
   for(let k=0;k<4;k++){
     const a=Q[k], b=Q[(k+1)%4]; const L=Math.hypot(b[0]-a[0],b[1]-a[1]); const dx=(b[0]-a[0])/L, dy=(b[1]-a[1])/L, nx=-dy, ny=dx;
     const found=[]; const Rout=4.5*f, Rin=4.5*f;
@@ -486,27 +503,21 @@ function detectQuad(p,A,pts,nSolid){
       const res=found.map(q=>Math.abs((q[0]-ln.px)*-ln.dy+(q[1]-ln.py)*ln.dx)); const mres=median(res);
       const inl=found.filter((q,i)=>res[i]<=2*mres+.6); if(inl.length>=10) ln=fitLine(inl);
       if(inl.length>=30&&mres<1.2*f){good=true; line={px:ln.px/f,py:ln.py/f,dx:ln.dx,dy:ln.dy};}}
-    if(good||near.length>=0.5*L) straight++;
+    if(good) goodN++; if(good||near.length>=0.5*L) straight++;
     lines.push(line);}
-  if(straight<3) return null;
+  if(straight<4||goodN<2) return null;
   const out=[];
   for(let k=0;k<4;k++){const c=intersect(lines[(k+3)%4],lines[k]); if(!c||Math.hypot(c[0]-Q[k][0],c[1]-Q[k][1])>12) out.push(Q[k]); else out.push(c);}
   return out.map(c=>[c[0]/W,c[1]/H]);
 }
 
 /* ================= colour ================= */
-function colorGains(A,white){
-  let g=[1,1,1], cast=false;
-  if(!S.auto) return {g,cast};
-  const lum=c=>.299*c[0]+.587*c[1]+.114*c[2];
-  if(A.ok&&A.bsat<.26&&!white){
-    const bm=A.bgMean, l=lum(bm);
-    g=bm.map(v=>Math.min(1.45,Math.max(.7,1+.9*(l/Math.max(1,v)-1))));
-  } else if(!white){
-    const l=lum(A.wp); g=A.wp.map(v=>Math.min(1.12,Math.max(.88,1+.5*(l/Math.max(1,v)-1))));
-  }
-  cast=Math.max(...g)-Math.min(...g)>.04;
-  return {g,cast};
+function colorGains(A,white,p){
+  let g=[1,1,1];
+  if(!S.auto||(p&&p.off.color)||white||!A.grey) return {g,cast:false};
+  const l=.299*A.grey[0]+.587*A.grey[1]+.114*A.grey[2];
+  g=A.grey.map(v=>Math.min(1.1,Math.max(.9,1+.7*(l/Math.max(1,v)-1))));
+  return {g,cast:Math.max(...g)-Math.min(...g)>.03};
 }
 function toneFn(Bp,Wp){
   const gam=Math.pow(2,-S.bright/50), con=S.contrast/100*2, sat=1+S.sat/100;
@@ -544,16 +555,17 @@ function rectAspect(q,u0,v0,L){
 function rotQuadPx(q,deg,cx,cy){const t=deg*Math.PI/180,c=Math.cos(t),s=Math.sin(t); return q.map(([x,y])=>{const X=x-cx,Y=y-cy; return [cx+X*c+Y*s, cy-X*s+Y*c];});}
 function regionQuad(p,A){
   // returns {quad (normalized), kind, angle}
-  const W=A.W,H=A.H, deg=(S.straighten?A.angle:0)+p.fine;
-  if(p.corners) return {quad:p.corners,kind:'manual',angle:0};
-  if(S.persp&&A.quad){
+  const W=A.W,H=A.H, off=p.off, autoDeg=(S.straighten&&!off.rot)?A.angle:0, deg=autoDeg+p.fine;
+  if(p.corners) return {quad:p.corners,kind:'manual',angle:0,autoDeg:0};
+  if(S.persp&&!off.persp&&A.quad){
     let q=A.quad.map(([x,y])=>[x*W,y*H]);
     if(p.fine){const cx=q.reduce((s,c)=>s+c[0],0)/4, cy=q.reduce((s,c)=>s+c[1],0)/4; q=rotQuadPx(q,p.fine,cx,cy);}
-    return {quad:q.map(([x,y])=>[x/W,y/H]),kind:'persp',angle:p.fine};
+    return {quad:q.map(([x,y])=>[x/W,y/H]),kind:'persp',angle:p.fine,autoDeg:0};
   }
   const t=deg*Math.PI/180, c=Math.cos(t), s=Math.sin(t), cx=W/2, cy=H/2;
   let rect;
-  if(S.autocrop&&A.ok){
+  const doCrop=S.autocrop&&!off.crop&&A.cropOk;
+  if(doCrop){
     let mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9;
     for(let k=0;k<A.pts.length;k+=2){const X=A.pts[k]-cx,Y=A.pts[k+1]-cy, rx=X*c-Y*s, ry=X*s+Y*c; if(rx<mnx)mnx=rx; if(rx>mxx)mxx=rx; if(ry<mny)mny=ry; if(ry>mxy)mxy=ry;}
     rect=[mnx-.5,mny-.5,mxx+.5,mxy+.5];
@@ -562,7 +574,7 @@ function regionQuad(p,A){
     rect=[-W*k/2,-H*k/2,W*k/2,H*k/2];
   }
   const corners=[[rect[0],rect[1]],[rect[2],rect[1]],[rect[2],rect[3]],[rect[0],rect[3]]].map(([qx,qy])=>[cx+qx*c+qy*s, cy-qx*s+qy*c]);
-  return {quad:corners.map(([x,y])=>[x/W,y/H]),kind:(S.autocrop&&A.ok)?'crop':'full',angle:deg};
+  return {quad:corners.map(([x,y])=>[x/W,y/H]),kind:doCrop?'crop':'full',angle:deg,autoDeg};
 }
 function renderKeep(p,A,outLong,maxWork){
   const R=regionQuad(p,A);
@@ -575,12 +587,13 @@ function renderKeep(p,A,outLong,maxWork){
   const d=src.getContext('2d',{willReadFrequently:true}).getImageData(0,0,W,H).data;
   const q=R.quad.map(([x,y])=>[x*W,y*H]);
   // colour: histogram inside the region's bounding box
-  const {g:gain,cast}=colorGains(A,false);
+  const {g:gain,cast}=colorGains(A,false,p);
   const bx0=Math.max(0,Math.floor(Math.min(...q.map(c=>c[0])))), bx1=Math.min(W,Math.ceil(Math.max(...q.map(c=>c[0])))), by0=Math.max(0,Math.floor(Math.min(...q.map(c=>c[1])))), by1=Math.min(H,Math.ceil(Math.max(...q.map(c=>c[1]))));
   const hist=new Uint32Array(256); let hn=0; const st=Math.max(1,Math.round(Math.sqrt((bx1-bx0)*(by1-by0)/90000)));
   for(let y=by0;y<by1;y+=st)for(let x=bx0;x<bx1;x+=st){const i=(y*W+x)*4; const l=Math.min(255,Math.round(.299*d[i]*gain[0]+.587*d[i+1]*gain[1]+.114*d[i+2]*gain[2])); hist[l]++; hn++;}
   const pct=qq=>{let acc=0; const lim=hn*qq; for(let k=0;k<256;k++){acc+=hist[k]; if(acc>=lim) return k/255;} return 1;};
-  let Bp=0,Wp=1; if(S.auto&&hn>50){Bp=Math.min(.08,pct(.003)*.85); Wp=Math.min(1,Math.max(.8,1-.7*(1-pct(.996))));}
+  let Bp=0,Wp=1; if(S.auto&&!p.off.color&&hn>50){Bp=Math.min(.05,pct(.001)*.8); Wp=Math.min(1,Math.max(.88,pct(.999)));}
+  const colorDone=cast||Bp>.012||Wp<.985;
   const tone=toneFn(Bp,Wp);
   // lookup tables per channel would ignore cross-channel saturation, so correct pixels directly
   const n=W*H, cd=new Uint8ClampedArray(n*4), o=new Float32Array(3);
@@ -592,12 +605,14 @@ function renderKeep(p,A,outLong,maxWork){
     const rho=rectAspect(qF,Wf/2,Hf/2,Math.max(Wf,Hf))||qw/qh, sA=Math.sqrt(polyArea(q))*1.05;
     qw=sA*Math.sqrt(rho); qh=sA/Math.sqrt(rho);
   }
-  const mpx=R.kind==='full'?0:S.margin/100*(qw+qh)/2;
-  let ow=qw+2*mpx, oh=qh+2*mpx; const ar=RATIOS[S.ratio];
-  if(ar){ if(ow/oh<ar) ow=oh*ar; else oh=ow/ar; }
-  const k=outLong/Math.max(ow,oh), Wo=Math.max(1,Math.round(ow*k)), Ho=Math.max(1,Math.round(oh*k));
-  const offx=(ow-qw)/2, offy=(oh-qh)/2;
   const [a,b,c,dd,e,f,g,h]=homog(q);
+  const ar=RATIOS[S.ratio];
+  const frame=m=>{let ow=qw+2*m, oh=qh+2*m; if(ar){ if(ow/oh<ar) ow=oh*ar; else oh=ow/ar; } return [ow,oh,(ow-qw)/2,(oh-qh)/2];};
+  const inside=([ow,oh,ox,oy])=>[[0,0],[ow,0],[ow,oh],[0,oh]].every(([X,Y])=>{const u=(X-ox)/qw, v=(Y-oy)/qh, den=g*u+h*v+1; if(den<=0) return false; const sx=(a*u+b*v+c)/den, sy=(dd*u+e*v+f)/den; return sx>=-1&&sy>=-1&&sx<=W+1&&sy<=H+1;});
+  let mpx=R.kind==='full'?0:S.margin/100*(qw+qh)/2, fr0=frame(mpx);
+  for(let it=0;it<8&&mpx>0&&!inside(fr0);it++){mpx*=.6; if(mpx<1) mpx=0; fr0=frame(mpx);}
+  const [ow,oh,offx,offy]=fr0;
+  const k=outLong/Math.max(ow,oh), Wo=Math.max(1,Math.round(ow*k)), Ho=Math.max(1,Math.round(oh*k));
   // fill colour for areas outside the photo: average of the corrected border
   let fr=0,fg=0,fb=0,fn=0; for(let x=0;x<W;x+=4){for(const y of [0,H-1]){const i=(y*W+x)*4; fr+=cd[i];fg+=cd[i+1];fb+=cd[i+2];fn++;}}
   fr/=fn;fg/=fn;fb/=fn;
@@ -619,7 +634,7 @@ function renderKeep(p,A,outLong,maxWork){
   const oc=document.createElement('canvas'); oc.width=Wo; oc.height=Ho;
   const x=oc.getContext('2d',{willReadFrequently:true}); x.putImageData(out,0,0);
   sharpen(x,Wo,Ho);
-  return {canvas:oc,info:{white:false,ok:A.ok,kind:R.kind,angle:R.angle,cast,Wo,Ho,quad:R.quad}};
+  return {canvas:oc,info:{white:false,ok:A.ok,kind:R.kind,angle:R.angle,autoDeg:R.autoDeg,color:colorDone,Wo,Ho,quad:R.quad}};
 }
 
 /* ================= render: white background ================= */
@@ -657,7 +672,7 @@ function renderWhite(p,A,workMax,outLong){
   const tone=toneFn(Bp,1);
   for(let y=0;y<H;y++)for(let x=0;x<W;x++){const i=(y*W+x)*4; px(x,y,i); tone(o); d[i]=o[0]*255; d[i+1]=o[1]*255; d[i+2]=o[2]*255; d[i+3]=o[3]*255;}
   sctx.putImageData(img,0,0);
-  const angDeg=(S.straighten?A.angle:0)+p.fine, ang=angDeg*Math.PI/180, cs=Math.cos(ang), sn=Math.sin(ang);
+  const angDeg=(S.straighten&&!p.off.rot?A.angle:0)+p.fine, ang=angDeg*Math.PI/180, cs=Math.cos(ang), sn=Math.sin(ang);
   let mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9; const kx=W/A.W, ky=H/A.H;
   for(let k=0;k<A.pts.length;k+=2){const X=A.pts[k]*kx-W/2, Yy=A.pts[k+1]*ky-H/2; const rx=X*cs-Yy*sn, ry=X*sn+Yy*cs;
     if(rx<mnx)mnx=rx; if(rx>mxx)mxx=rx; if(ry<mny)mny=ry; if(ry>mxy)mxy=ry;}
@@ -680,7 +695,7 @@ function renderWhite(p,A,workMax,outLong){
   x.imageSmoothingEnabled=true; x.imageSmoothingQuality='high';
   x.save(); x.translate(Wo/2,Ho/2); x.scale(scale,scale); x.translate(-cx,-cy); x.rotate(ang); x.translate(-W/2,-H/2); x.drawImage(src,0,0); x.restore();
   sharpen(x,Wo,Ho);
-  return {canvas:oc,info:{white:true,ok:true,kind:'white',bgFrac:A.bgFrac,angle:angDeg,cast:S.auto&&cast>.3&&A.bsat>.03,Wo,Ho}};
+  return {canvas:oc,info:{white:true,ok:true,kind:'white',bgFrac:A.bgFrac,angle:angDeg,autoDeg:S.straighten&&!p.off.rot?A.angle:0,color:false,Wo,Ho}};
 }
 function render(p,workMax,outLong){
   const A=analyze(p);
@@ -772,7 +787,6 @@ function makeVase(){
   const v=x.createRadialGradient(W*.52,H*.42,H*.18,W*.5,H*.5,H*.98); v.addColorStop(0,'rgba(255,250,240,0.12)'); v.addColorStop(1,'rgba(40,28,15,0.38)'); x.fillStyle=v; x.fillRect(0,0,W,H);
   x.save(); x.translate(W/2-160,H/2+40);
   x.save(); x.translate(0,335); x.scale(1,40/230); const s=x.createRadialGradient(0,0,0,0,0,230); s.addColorStop(0,'rgba(45,32,20,.45)'); s.addColorStop(1,'rgba(45,32,20,0)'); x.fillStyle=s; x.beginPath(); x.arc(0,0,230,0,7); x.fill(); x.restore();
-  x.rotate(-4*Math.PI/180);
   x.beginPath(); x.moveTo(-48,-390); x.lineTo(48,-390); x.bezierCurveTo(40,-330,35,-280,70,-230); x.bezierCurveTo(240,-160,270,40,170,220); x.bezierCurveTo(130,280,70,300,75,330); x.lineTo(-75,330); x.bezierCurveTo(-70,300,-130,280,-170,220); x.bezierCurveTo(-270,40,-240,-160,-70,-230); x.bezierCurveTo(-35,-280,-40,-330,-48,-390); x.closePath();
   const gl=x.createLinearGradient(-260,0,260,0); gl.addColorStop(0,'#20403a'); gl.addColorStop(.28,'#5f9686'); gl.addColorStop(.38,'#c5e3d6'); gl.addColorStop(.5,'#6aa18f'); gl.addColorStop(.85,'#335f54'); gl.addColorStop(1,'#1a3530');
   x.fillStyle=gl; x.fill(); x.save(); x.clip(); x.fillStyle='rgba(176,138,62,.9)'; x.fillRect(-300,-150,600,26); x.fillRect(-300,190,600,14); x.restore();
@@ -784,7 +798,7 @@ function makeVase(){
 
 /* ================= state & processing ================= */
 function addPhoto(src,name,isSample){
-  const p={id:++uid,src,name,w:src.width,h:src.height,rot90:0,fine:0,corners:null,isSample,dirty:true,status:'wait',beforeURL:'',afterURL:'',thumb:'',info:null};
+  const p={id:++uid,src,name,w:src.width,h:src.height,rot90:0,fine:0,corners:null,off:{},isSample,dirty:true,status:'wait',beforeURL:'',afterURL:'',thumb:'',info:null};
   photos.push(p); return p;
 }
 function toBlob(c,type,q){return new Promise(r=>c.toBlob(b=>r(b),type,q));}
@@ -828,14 +842,20 @@ function showCurrent(){
   const n=document.createElement('span'); n.className='fname'; n.textContent=p.name; meta.appendChild(n);
   if(p.isSample) add('Exemple','ex');
   const i=p.info;
+  // each automatic correction is a chip: click to switch it off (or back on) for this photo only
+  const tog=(key,label,offLabel)=>{const b=document.createElement('button'); b.type='button'; const isOff=!!p.off[key];
+    b.className='chip '+(isOff?'offchip':'ok togchip'); b.textContent=isOff?offLabel:label+'  ×';
+    b.title=isOff?'Réactiver pour cette photo':'Annuler cette correction pour cette photo';
+    b.addEventListener('click',()=>{p.off[key]=!isOff; p.dirty=true; gen++; kick(); showCurrent();}); meta.appendChild(b);};
   if(i){
     if(i.whiteFailed) add('Fond non détecté : fond conservé','warn');
-    if(i.kind==='persp') add('Trapèze corrigé','ok');
-    else if(i.kind==='manual') add('Coins ajustés à la main','ok');
-    else if(i.kind==='crop') add('Recadré sur l\'objet','ok');
-    else if(i.kind==='white') add('Fond blanc · '+Math.round(i.bgFrac*100)+' %','ok');
-    if(i.kind!=='persp'&&i.kind!=='manual'&&Math.abs(i.angle)>=.25) add('Redressé '+(i.angle>0?'+':'−')+fmtNum(Math.abs(i.angle))+'°');
-    if(i.cast) add('Dominante corrigée');
+    if(i.kind==='manual') add('Coins ajustés à la main','ok');
+    if(i.kind==='white') add('Fond blanc','ok');
+    if(i.kind==='persp') tog('persp','Trapèze corrigé'); else if(p.off.persp) tog('persp','','Trapèze : rétablir');
+    if(i.kind==='crop') tog('crop','Recadré'); else if(p.off.crop) tog('crop','','Recadrage : rétablir');
+    if(Math.abs(i.autoDeg||0)>=.25) tog('rot','Redressé '+(i.autoDeg>0?'+':'−')+fmtNum(Math.abs(i.autoDeg))+'°'); else if(p.off.rot) tog('rot','','Redressement : rétablir');
+    if(i.color) tog('color','Couleurs corrigées'); else if(p.off.color) tog('color','','Couleurs : rétablir');
+    if(i.kind==='full'&&!i.color&&!p.off.persp&&!p.off.crop&&Math.abs(i.autoDeg||0)<.25&&!i.whiteFailed) add('Aucune correction sûre : photo laissée telle quelle');
     add(exportSize(i));
   }
   $('#fineRot').value=p.fine; $('#fineRotV').textContent=(p.fine>0?'+':'')+fmtNum(p.fine)+'°';
@@ -877,7 +897,7 @@ async function addFiles(files){
   if(!list.length){toast('Aucune image reconnue dans ce dépôt.'); return;}
   if(photos.some(p=>p.isSample)){ for(let k=photos.length-1;k>=0;k--) if(photos[k].isSample) removePhoto(k); }
   const start=photos.length; let bad=0;
-  for(const f of list){ try{ const bm=await createImageBitmap(f); addPhoto(bm,f.name,false); }catch(e){ bad++; } }
+  for(const f of list){ try{ const bm=await createImageBitmap(f,{imageOrientation:'from-image'}).catch(()=>createImageBitmap(f)); addPhoto(bm,f.name,false); }catch(e){ bad++; } }
   if(bad) toast(bad+' fichier(s) illisible(s) par le navigateur. Le HEIC doit être converti en JPEG.');
   $('#note').hidden=true;
   if(photos.length>start){cur=start; drawStrip(); showCurrent(); kick();}
